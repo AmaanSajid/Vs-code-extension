@@ -1,27 +1,8 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
-import * as fs from 'fs';
-import * as path from 'path';
 
 export function activate(context: vscode.ExtensionContext) {
     const backendUrl = vscode.workspace.getConfiguration('aiCodeAssistant').get<string>('backendUrl', 'http://localhost:8000');
-
-    async function getProjectContext(): Promise<string> {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders) return '';
-
-        const rootPath = workspaceFolders[0].uri.fsPath;
-        let context = '';
-
-        const files = await vscode.workspace.findFiles('**/*.{py,js,ts,html,css}', '**/node_modules/**');
-        for (const file of files) {
-            const relativePath = path.relative(rootPath, file.fsPath);
-            const content = await fs.promises.readFile(file.fsPath, 'utf8');
-            context += `File: ${relativePath}\n\n${content}\n\n`;
-        }
-
-        return context;
-    }
 
     let getSuggestionDisposable = vscode.commands.registerCommand('ai-code-assistant.getSuggestion', async () => {
         const editor = vscode.window.activeTextEditor;
@@ -45,11 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
                     file_content: entireFileContent
                 });
 
-                const suggestionDoc = await vscode.workspace.openTextDocument({
-                    content: response.data.suggestion,
-                    language: editor.document.languageId
-                });
-                await vscode.window.showTextDocument(suggestionDoc);
+                showSuggestionInWebview(context, response.data.suggestion, editor.document.languageId);
             });
         } catch (error) {
             handleError('Failed to get AI suggestion', error);
@@ -62,6 +39,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         const selection = editor.selection;
         const selectedCode = editor.document.getText(selection);
+        const entireFileContent = editor.document.getText();
 
         try {
             await vscode.window.withProgress({
@@ -73,13 +51,11 @@ export function activate(context: vscode.ExtensionContext) {
                     code: selectedCode,
                     file_path: editor.document.fileName,
                     language: editor.document.languageId,
-                    request_type: 'explain'
+                    request_type: 'explain',
+                    file_content: entireFileContent
                 });
 
-                const outputChannel = vscode.window.createOutputChannel('AI Code Explanation');
-                outputChannel.appendLine('Code Explanation:');
-                outputChannel.appendLine(response.data.suggestion);
-                outputChannel.show();
+                showSuggestionInWebview(context, response.data.suggestion, 'markdown');
             });
         } catch (error) {
             handleError('Failed to explain code', error);
@@ -92,6 +68,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         const selection = editor.selection;
         const selectedCode = editor.document.getText(selection);
+        const entireFileContent = editor.document.getText();
 
         try {
             await vscode.window.withProgress({
@@ -103,34 +80,75 @@ export function activate(context: vscode.ExtensionContext) {
                     code: selectedCode,
                     file_path: editor.document.fileName,
                     language: editor.document.languageId,
-                    request_type: 'refactor'
+                    request_type: 'refactor',
+                    file_content: entireFileContent
                 });
 
-                const refactoredDoc = await vscode.workspace.openTextDocument({
-                    content: response.data.suggestion,
-                    language: editor.document.languageId
-                });
-                await vscode.window.showTextDocument(refactoredDoc);
+                showSuggestionInWebview(context, response.data.suggestion, editor.document.languageId);
             });
         } catch (error) {
             handleError('Failed to refactor code', error);
         }
     });
 
-    function handleError(message: string, error: any) {
-        console.error(error);
-        if (axios.isAxiosError(error) && error.response) {
-            vscode.window.showErrorMessage(`${message}: ${error.response.data.detail || error.message}`);
-        } else {
-            vscode.window.showErrorMessage(`${message}: ${error.message}`);
-        }
-    }
-
     context.subscriptions.push(
         getSuggestionDisposable,
         explainCodeDisposable,
         refactorCodeDisposable
     );
+}
+
+function showSuggestionInWebview(context: vscode.ExtensionContext, suggestion: string, language: string) {
+    const panel = vscode.window.createWebviewPanel(
+        'aiSuggestion',
+        'AI Code Suggestion',
+        vscode.ViewColumn.Beside,
+        {
+            enableScripts: true
+        }
+    );
+
+    panel.webview.html = getWebviewContent(suggestion, language);
+}
+
+function getWebviewContent(suggestion: string, language: string) {
+    return `<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AI Code Suggestion</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.1/styles/default.min.css">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.1/highlight.min.js"></script>
+        <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
+            pre { background-color: #f4f4f4; padding: 15px; border-radius: 5px; }
+        </style>
+    </head>
+    <body>
+        <h2>AI Suggestion</h2>
+        <pre><code class="language-${language}">${escapeHtml(suggestion)}</code></pre>
+        <script>hljs.highlightAll();</script>
+    </body>
+    </html>`;
+}
+
+function escapeHtml(unsafe: string) {
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function handleError(message: string, error: any) {
+    console.error(error);
+    if (axios.isAxiosError(error) && error.response) {
+        vscode.window.showErrorMessage(`${message}: ${error.response.data.detail || error.message}`);
+    } else {
+        vscode.window.showErrorMessage(`${message}: ${error.message}`);
+    }
 }
 
 export function deactivate() { }
