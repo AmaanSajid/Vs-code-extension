@@ -1,0 +1,72 @@
+{
+    "name": "ai-code-assistant",
+    "displayName": "AI Code Assistant",
+    "version": "0.1.0",
+    "description": "Intelligent code assistance powered by AI",
+    "main": "./out/extension.js",
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile",
+        "test": "node ./out/test/runTest.js"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/yourusername/ai-code-assistant"
+    },
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onCommand:ai-code-assistant.getSuggestion",
+        "onCommand:ai-code-assistant.explainCode",
+        "onCommand:ai-code-assistant.refactorCode"
+    ],
+    "contributes": {
+        "commands": [
+            {
+                "command": "ai-code-assistant.getSuggestion",
+                "title": "Get AI Code Suggestion"
+            },
+            {
+                "command": "ai-code-assistant.explainCode",
+                "title": "Explain Code"
+            },
+            {
+                "command": "ai-code-assistant.refactorCode",
+                "title": "Refactor Code"
+            }
+        ],
+        "menus": {
+            "editor/context": [
+                {
+                    "command": "ai-code-assistant.getSuggestion",
+                    "group": "ai-assistant-group",
+                    "when": "editorTextFocus"
+                },
+                {
+                    "command": "ai-code-assistant.explainCode",
+                    "group": "ai-assistant-group",
+                    "when": "editorTextFocus"
+                },
+                {
+                    "command": "ai-code-assistant.refactorCode",
+                    "group": "ai-assistant-group",
+                    "when": "editorTextFocus"
+                }
+            ]
+        }
+    },
+    "dependencies": {
+        "axios": "^0.21.1"
+    },
+    "devDependencies": {
+        "@types/node": "^14.14.31",
+        "@types/vscode": "^1.96.0",
+        "typescript": "^4.2.4"
+    }
+}
