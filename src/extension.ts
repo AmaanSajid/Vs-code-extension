@@ -35,20 +35,20 @@ export function activate(context: vscode.ExtensionContext) {
                 });
             });
 
-            showResultInWebview(context, response.data.suggestion, editor.document.languageId, title);
+            showResultInWebview(context, response.data.suggestion, editor.document.languageId, title, requestType);
         } catch (error) {
             handleError(`Failed to ${title.toLowerCase()}`, error);
         }
     }
 
     let getSuggestionDisposable = vscode.commands.registerCommand('ai-code-assistant.getSuggestion', () =>
-        processCodeRequest('suggestion', 'Getting AI Suggestion'));
+        processCodeRequest('suggestion', 'AI Suggestion'));
 
     let explainCodeDisposable = vscode.commands.registerCommand('ai-code-assistant.explainCode', () =>
-        processCodeRequest('explain', 'Explaining Code'));
+        processCodeRequest('explain', 'Code Explanation'));
 
     let refactorCodeDisposable = vscode.commands.registerCommand('ai-code-assistant.refactorCode', () =>
-        processCodeRequest('refactor', 'Refactoring Code'));
+        processCodeRequest('refactor', 'Refactored Code'));
 
     context.subscriptions.push(
         getSuggestionDisposable,
@@ -57,35 +57,79 @@ export function activate(context: vscode.ExtensionContext) {
     );
 }
 
-function showResultInWebview(context: vscode.ExtensionContext, result: string, language: string, title: string) {
+function showResultInWebview(context: vscode.ExtensionContext, result: string, language: string, title: string, requestType: string) {
     const panel = vscode.window.createWebviewPanel(
         'aiCodeAssistant',
         title,
         vscode.ViewColumn.Beside,
-        { enableScripts: true }
+        {
+            enableScripts: true
+        }
     );
 
-    panel.webview.html = getWebviewContent(result, language, title);
+    panel.webview.html = getWebviewContent(result, language, title, requestType);
+
+    panel.webview.onDidReceiveMessage(
+        async message => {
+            switch (message.command) {
+                case 'copy':
+                    vscode.env.clipboard.writeText(message.text);
+                    vscode.window.showInformationMessage('Code copied to clipboard');
+                    return;
+                case 'rewrite':
+                    try {
+                        vscode.window.showInformationMessage('Refactoring the code')
+                        const rewrittenCode = await rewriteCode(message.text, requestType);
+                        panel.webview.postMessage({ command: 'update', content: rewrittenCode });
+                    } catch (error) {
+                        handleError('Failed to rewrite code', error);
+                    }
+                    return;
+            }
+        },
+        undefined,
+        context.subscriptions
+    );
 }
 
-function getWebviewContent(result: string, language: string, title: string) {
+function getWebviewContent(result: string, language: string, title: string, requestType: string) {
     return `<!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${title}</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.1/styles/default.min.css">
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.1/highlight.min.js"></script>
         <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
-            pre { background-color: #f4f4f4; padding: 15px; border-radius: 5px; }
+            body { font-family: Arial, sans-serif; padding: 10px; }
+            pre { background-color: #f4f4f4; padding: 10px; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word; }
+            button { margin-top: 10px; margin-right: 5px; }
         </style>
     </head>
     <body>
         <h2>${title}</h2>
-        <pre><code class="language-${language}">${escapeHtml(result)}</code></pre>
-        <script>hljs.highlightAll();</script>
+        <pre><code>${escapeHtml(result)}</code></pre>
+        ${requestType === 'refactor' ? '<button onclick="copyCode()">Copy</button>' : ''}
+        <button onclick="rewriteCode()">Rewrite</button>
+        <script>
+            const vscode = acquireVsCodeApi();
+            function copyCode() {
+                vscode.postMessage({ command: 'copy', text: document.querySelector('code').textContent });
+            }
+            function rewriteCode() {
+                vscode.postMessage({ 
+                    command: 'rewrite', 
+                    text: document.querySelector('code').textContent
+                });
+            }
+            window.addEventListener('message', event => {
+                const message = event.data;
+                switch (message.command) {
+                    case 'update':
+                        document.querySelector('code').textContent = message.content;
+                        break;
+                }
+            });
+        </script>
     </body>
     </html>`;
 }
@@ -97,6 +141,15 @@ function escapeHtml(unsafe: string) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+async function rewriteCode(code: string, requestType: string): Promise<string> {
+    const backendUrl = vscode.workspace.getConfiguration('aiCodeAssistant').get<string>('backendUrl', 'http://localhost:8000');
+    const response = await axios.post(`${backendUrl}/rewrite_code`, {
+        code: code,
+        request_type: requestType
+    });
+    return response.data.suggestion;
 }
 
 function handleError(message: string, error: any) {
