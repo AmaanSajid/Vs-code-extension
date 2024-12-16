@@ -44,22 +44,31 @@
         "menus": {
             "editor/context": [
                 {
+                    "submenu": "ai-code-assistant.menu",
+                    "group": "navigation"
+                }
+            ],
+            "ai-code-assistant.menu": [
+                {
                     "command": "ai-code-assistant.getSuggestion",
-                    "group": "ai-assistant-group",
-                    "when": "editorTextFocus"
+                    "group": "1_modification"
                 },
                 {
                     "command": "ai-code-assistant.explainCode",
-                    "group": "ai-assistant-group",
-                    "when": "editorTextFocus"
+                    "group": "1_modification"
                 },
                 {
                     "command": "ai-code-assistant.refactorCode",
-                    "group": "ai-assistant-group",
-                    "when": "editorTextFocus"
+                    "group": "1_modification"
                 }
             ]
-        }
+        },
+        "submenus": [
+            {
+                "id": "ai-code-assistant.menu",
+                "label": "AI Code Assistant"
+            }
+        ]
     },
     "dependencies": {
         "axios": "^0.21.1"
