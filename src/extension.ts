@@ -4,92 +4,51 @@ import axios from 'axios';
 export function activate(context: vscode.ExtensionContext) {
     const backendUrl = vscode.workspace.getConfiguration('aiCodeAssistant').get<string>('backendUrl', 'http://localhost:8000');
 
-    let getSuggestionDisposable = vscode.commands.registerCommand('ai-code-assistant.getSuggestion', async () => {
+    async function processCodeRequest(requestType: string, title: string) {
         const editor = vscode.window.activeTextEditor;
-        if (!editor) return;
+        if (!editor) {
+            vscode.window.showErrorMessage('No active editor found');
+            return;
+        }
 
         const selection = editor.selection;
         const selectedCode = editor.document.getText(selection);
+        if (!selectedCode) {
+            vscode.window.showErrorMessage('No code selected');
+            return;
+        }
+
         const entireFileContent = editor.document.getText();
 
         try {
-            await vscode.window.withProgress({
+            const response = await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
-                title: 'Fetching AI Suggestion...',
+                title: `${title}...`,
                 cancellable: false
             }, async () => {
-                const response = await axios.post(`${backendUrl}/analyze_code`, {
+                return await axios.post(`${backendUrl}/analyze_code`, {
                     code: selectedCode,
                     file_path: editor.document.fileName,
                     language: editor.document.languageId,
-                    request_type: 'suggestion',
+                    request_type: requestType,
                     file_content: entireFileContent
                 });
-
-                showSuggestionInWebview(context, response.data.suggestion, editor.document.languageId);
             });
+
+            showResultInWebview(context, response.data.suggestion, editor.document.languageId, title);
         } catch (error) {
-            handleError('Failed to get AI suggestion', error);
+            handleError(`Failed to ${title.toLowerCase()}`, error);
         }
-    });
+    }
 
-    let explainCodeDisposable = vscode.commands.registerCommand('ai-code-assistant.explainCode', async () => {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) return;
+    let getSuggestionDisposable = vscode.commands.registerCommand('ai-code-assistant.getSuggestion', () =>
+        processCodeRequest('suggestion', 'Getting AI Suggestion'));
 
-        const selection = editor.selection;
-        const selectedCode = editor.document.getText(selection);
-        const entireFileContent = editor.document.getText();
+    let explainCodeDisposable = vscode.commands.registerCommand('ai-code-assistant.explainCode', () =>
+        processCodeRequest('explain', 'Explaining Code'));
 
-        try {
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Explaining Code...',
-                cancellable: false
-            }, async () => {
-                const response = await axios.post(`${backendUrl}/analyze_code`, {
-                    code: selectedCode,
-                    file_path: editor.document.fileName,
-                    language: editor.document.languageId,
-                    request_type: 'explain',
-                    file_content: entireFileContent
-                });
-
-                showSuggestionInWebview(context, response.data.suggestion, 'markdown');
-            });
-        } catch (error) {
-            handleError('Failed to explain code', error);
-        }
-    });
-
-    let refactorCodeDisposable = vscode.commands.registerCommand('ai-code-assistant.refactorCode', async () => {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) return;
-
-        const selection = editor.selection;
-        const selectedCode = editor.document.getText(selection);
-        const entireFileContent = editor.document.getText();
-
-        try {
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Refactoring Code...',
-                cancellable: false
-            }, async () => {
-                const response = await axios.post(`${backendUrl}/analyze_code`, {
-                    code: selectedCode,
-                    file_path: editor.document.fileName,
-                    language: editor.document.languageId,
-                    request_type: 'refactor',
-                    file_content: entireFileContent
-                });
-
-                showSuggestionInWebview(context, response.data.suggestion, editor.document.languageId);
-            });
-        } catch (error) {
-            handleError('Failed to refactor code', error);
-        }
-    });
+    let refactorCodeDisposable = vscode.commands.registerCommand('ai-code-assistant.refactorCode', () =>
+        processCodeRequest('refactor', 'Refactoring Code'));
 
     context.subscriptions.push(
         getSuggestionDisposable,
@@ -98,26 +57,24 @@ export function activate(context: vscode.ExtensionContext) {
     );
 }
 
-function showSuggestionInWebview(context: vscode.ExtensionContext, suggestion: string, language: string) {
+function showResultInWebview(context: vscode.ExtensionContext, result: string, language: string, title: string) {
     const panel = vscode.window.createWebviewPanel(
-        'aiSuggestion',
-        'AI Code Suggestion',
+        'aiCodeAssistant',
+        title,
         vscode.ViewColumn.Beside,
-        {
-            enableScripts: true
-        }
+        { enableScripts: true }
     );
 
-    panel.webview.html = getWebviewContent(suggestion, language);
+    panel.webview.html = getWebviewContent(result, language, title);
 }
 
-function getWebviewContent(suggestion: string, language: string) {
+function getWebviewContent(result: string, language: string, title: string) {
     return `<!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AI Code Suggestion</title>
+        <title>${title}</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.1/styles/default.min.css">
         <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.1/highlight.min.js"></script>
         <style>
@@ -126,8 +83,8 @@ function getWebviewContent(suggestion: string, language: string) {
         </style>
     </head>
     <body>
-        <h2>AI Suggestion</h2>
-        <pre><code class="language-${language}">${escapeHtml(suggestion)}</code></pre>
+        <h2>${title}</h2>
+        <pre><code class="language-${language}">${escapeHtml(result)}</code></pre>
         <script>hljs.highlightAll();</script>
     </body>
     </html>`;
